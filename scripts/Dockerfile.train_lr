@@ -1,0 +1,4 @@
+FROM python:3.11-slim
+WORKDIR /app
+RUN pip install --no-cache-dir numpy scikit-learn joblib
+COPY 04_train_lr.py .

@@ -1,0 +1,190 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: ml-data-science-dag-benchmark-
+spec:
+  entrypoint: main-pipeline
+  serviceAccountName: argo
+
+  templates:
+    - name: main-pipeline
+      dag:
+        tasks:
+          - name: run-validation
+            template: validation-step
+
+          - name: run-preprocessing
+            dependencies: [run-validation]
+            template: preprocessing-step
+
+          - name: run-imbalance
+            dependencies: [run-preprocessing]
+            template: imbalance-step
+            arguments:
+              artifacts:
+                - name: processed-data-folder
+                  from: "{{tasks.run-preprocessing.outputs.artifacts.preprocessed-data-folder}}"
+
+          - name: run-train-lr
+            dependencies: [run-imbalance]
+            template: train-lr-step
+            arguments:
+              artifacts:
+                - name: resampled-data-folder
+                  from: "{{tasks.run-imbalance.outputs.artifacts.resampled-data-folder}}"
+
+          - name: run-train-xgb
+            dependencies: [run-imbalance]
+            template: train-xgb-step
+            arguments:
+              artifacts:
+                - name: resampled-data-folder
+                  from: "{{tasks.run-imbalance.outputs.artifacts.resampled-data-folder}}"
+
+          - name: run-plot-results
+            dependencies: [run-train-lr, run-train-xgb]
+            template: plot-results-step
+            arguments:
+              artifacts:
+                - name: metrics-lr
+                  from: "{{tasks.run-train-lr.outputs.artifacts.metrics-lr}}"
+                - name: metrics-xgb
+                  from: "{{tasks.run-train-xgb.outputs.artifacts.metrics-xgb}}"
+
+    - name: validation-step
+      retryStrategy:
+        limit: "3"
+        retryPolicy: "OnFailure"
+      outputs:
+        artifacts:
+          - name: validation-report
+            path: /data/out
+      container:
+        image: ml-validation:v1
+        command: ["python", "01_data_validation.py"]
+        args: 
+          - "--input"
+          - "/data/in/paysim_dataset.csv"
+          - "--report"
+          - "/data/out/data-validation-report.json"
+          - "--benchmark"
+          - "True"
+      inputs:
+        artifacts:
+          - name: raw-data
+            path: /data/in/paysim_dataset.csv
+            s3:
+              key: paysim_dataset.csv 
+          
+    - name: preprocessing-step
+      retryStrategy:
+        limit: "3"
+        retryPolicy: "OnFailure"
+      outputs:
+        artifacts:
+          - name: preprocessed-data-folder
+            path: /data/out
+      container:
+        image: ml-preprocessing:v1
+        command: ["python", "02_preprocessing.py"]
+        args: 
+          - "--input"
+          - "/data/in/paysim_dataset.csv"
+          - "--out-dir"
+          - "/data/out"
+      inputs:
+        artifacts:
+          - name: raw-data
+            path: /data/in/paysim_dataset.csv
+            s3:
+              key: paysim_dataset.csv 
+
+    - name: imbalance-step
+      retryStrategy:
+        limit: "3"
+        retryPolicy: "OnFailure"
+      inputs:
+        artifacts:
+          - name: processed-data-folder
+            path: /data/in
+      outputs:
+        artifacts:
+          - name: resampled-data-folder
+            path: /data/out
+      container:
+        image: ml-imbalance:v1
+        command: ["python", "03_handle_imbalance.py"]
+        args: 
+          - "--data-dir"
+          - "/data/in"
+          - "--out-dir"
+          - "/data/out"
+
+    - name: train-lr-step
+      retryStrategy:
+        limit: "3"
+        retryPolicy: "OnFailure"
+      inputs:
+        artifacts:
+          - name: resampled-data-folder
+            path: /data/in
+      outputs:
+        artifacts:
+          - name: trained-model-lr
+            path: /data/out/model_lr.joblib
+          - name: metrics-lr
+            path: /data/out/metrics_lr.json
+      container:
+        image: ml-train-lr:v1 
+        command: ["python", "04_train_lr.py"]
+        args: 
+          - "--data-dir"
+          - "/data/in"
+          - "--out-dir"
+          - "/data/out"
+
+    - name: train-xgb-step
+      retryStrategy:
+        limit: "3"
+        retryPolicy: "OnFailure"
+      inputs:
+        artifacts:
+          - name: resampled-data-folder
+            path: /data/in
+      outputs:
+        artifacts:
+          - name: trained-model-xgb
+            path: /data/out/model_xgb.joblib
+          - name: metrics-xgb
+            path: /data/out/metrics_xgb.json
+      container:
+        image: ml-train-xgb:v1
+        command: ["python", "05_train_xgb.py"]
+        args: 
+          - "--data-dir"
+          - "/data/in"
+          - "--out-dir"
+          - "/data/out"
+
+    - name: plot-results-step
+      retryStrategy:
+        limit: "3"
+        retryPolicy: "OnFailure"
+      inputs:
+        artifacts:
+          - name: metrics-lr
+            path: /data/in/metrics_lr.json
+          - name: metrics-xgb
+            path: /data/in/metrics_xgb.json
+      outputs:
+        artifacts:
+          - name: plots
+            path: /data/out
+      container:
+        image: ml-plot:v1
+        command: ["python", "06_plot_results.py"]
+        args: 
+          - "--data-dir"
+          - "/data/in"
+          - "--out-dir"
+          - "/data/out"

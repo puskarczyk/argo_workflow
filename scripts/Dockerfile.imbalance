@@ -1,0 +1,4 @@
+FROM python:3.11-slim
+WORKDIR /app
+RUN pip install --no-cache-dir numpy scikit-learn imbalanced-learn
+COPY 03_handle_imbalance.py .
