@@ -207,6 +207,11 @@ kubectl port-forward deployment/minio -n argo 9000:9000 9001:9001
 
 Open http://localhost:9001, log in with `admin` / `password`, create a bucket named `my-bucket`, and upload `paysim_dataset.csv`.
 
+> If the port changes check it with:
+> ```bash
+> 
+> ```
+
 ### 4. Build and load Docker images into Kind
 
 Each pipeline step requires its own Docker image. The images are built using Dockerfiles located in the `/scripts` directory (`Dockerfile.*`). After building, they must be loaded into the Kind cluster to make them available for Argo Workflows execution.
