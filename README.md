@@ -209,7 +209,7 @@ Open http://localhost:9001, log in with `admin` / `password`, create a bucket na
 
 > If the port changes check it with:
 > ```bash
-> 
+> kubectl logs deployment/minio -n argo
 > ```
 
 ### 4. Build and load Docker images into Kind
